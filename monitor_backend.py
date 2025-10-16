@@ -10,7 +10,7 @@ Features:
 - PASSIVE KEYWORD CHECK: Records content status but does NOT affect site UP/DOWN status or alerting.
 - CLI modes: --run-now (one-shot), --diag <url> (diagnostic)
 - Configurable via .env and sites.yaml
-- **NEW: Scheduled Daily Email Status Report (9am, 1pm, 4:10pm, 5:30pm IST) - Fixed for single send.**
+- **NEW: Scheduled Hourly Activity SUMMARY Report (5:00pm & 9:00am IST) - Fixed for specific time windows.**
 """
 
 import os
@@ -22,7 +22,7 @@ import logging
 import sys
 import json
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse, urljoin, quote
 from contextlib import closing
 import warnings
@@ -42,7 +42,7 @@ HAS_REQUESTS = False
 HAS_ICMPLIB = False
 HAS_DNS = False
 
-from filelock import FileLock, Timeout # Import Timeout specifically
+from filelock import FileLock, Timeout
 from dotenv import dotenv_values
 
 # FIX: Cleaned and restructured import blocks to remove U+00A0 errors
@@ -114,25 +114,27 @@ REPORT_STATE_FILE = "daily_report_state.json"
 REPORT_STATE_LOCK = REPORT_STATE_FILE + ".lock" # Lock for report state
 
 # --- UPDATED: Daily Report Schedule (IST) ---
-REPORT_TIMES_IST = [(9, 0), (13, 0), (16, 10), (17, 30)] # 9:00, 1:00 PM, 4:10 PM, 5:30 PM IST
+REPORT_TIMES_IST = [(17, 0), (9, 0)] # 5:00 PM and 9:00 AM IST
 
 # ---------------------------
 # Load Report State (for persistence fix)
 # ---------------------------
 def load_report_state():
-    """Loads the daily report state from a file."""
-    default_state = {"date": None, "sent_slots": [False] * len(REPORT_TIMES_IST)}
+    """Loads the daily report state from a file, tracking the last report time."""
+    # Using a very old date as initial value if file not found
+    initial_time = datetime(2000, 1, 1, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+    default_state = {"last_report_time": initial_time, "sent_slots": [False] * len(REPORT_TIMES_IST), "date": None}
     if not os.path.exists(REPORT_STATE_FILE):
         return default_state
     try:
         with FileLock(REPORT_STATE_LOCK, timeout=5): # ADDED LOCK
             with open(REPORT_STATE_FILE, "r") as f:
                 state = json.load(f)
-                # Ensure the structure is correct, especially after code changes
-                if "sent_slots" in state and len(state["sent_slots"]) == len(REPORT_TIMES_IST):
-                     return state
-                else:
-                    return default_state
+                # Ensure compatibility for the new schedule/logic
+                if "last_report_time" not in state or "sent_slots" not in state or len(state["sent_slots"]) != len(REPORT_TIMES_IST):
+                    return default_state 
+                     
+                return state
     except Exception:
         logging.warning("Failed to load or parse report state file. Resetting.")
         return default_state
@@ -145,8 +147,6 @@ def save_report_state(state):
                 json.dump(state, f, default=str)
     except Exception:
         logging.error("Failed to save report state.")
-
-DAILY_REPORT_STATE = load_report_state()
 
 # ---------------------------
 # Load sites.yaml
@@ -815,91 +815,267 @@ def send_recovery_email(site_name, final_result):
     except Exception:
         logging.exception("Failed to send recovery email")
 
-# ---------------------------
-# NEW: Daily Report Logic
-# ---------------------------
-def generate_and_send_daily_report():
-    """Generates a summary of the current site status from site_state.json and sends it via email."""
+# Helper function to parse ISO time, accounting for dateutil_parser fallback
+def parse_time(iso_str):
+    if not iso_str:
+        return None
     try:
-        with FileLock(SITE_STATE_LOCK, timeout=5):
-            with open(SITE_STATE_FILE, 'r') as f:
-                state_data = json.load(f)
+        # Assume it's an ISO format string with timezone offset (e.g., from logs)
+        return datetime.fromisoformat(iso_str).astimezone(dateutil_tz.gettz('Asia/Kolkata'))
+    except ValueError:
+        try:
+            # Fallback for old/non-standard formats
+            return dateutil_parser.parse(iso_str).astimezone(dateutil_tz.gettz('Asia/Kolkata'))
+        except Exception:
+            return None
+
+def generate_hourly_summary(start_time_ist, end_time_ist):
+    """Reads logs between start_time_ist and end_time_ist and generates a summary."""
+    
+    # dictionary: {site_name: {hour_of_day_key: last_status_in_that_hour}}
+    hourly_status = {} 
+    # dictionary: {site_name: {total_checks, down_checks, total_ttfb, up_checks}}
+    summary_metrics = {}
+    
+    try:
+        # Use FileLock to safely read the large log file
+        with FileLock(LOCK_FILE, timeout=10):
+            with open(LOG_FILE, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Parse and convert time to IST
+                    log_dt_ist = parse_time(row.get('DateTime', ''))
+                    
+                    # Filter logs to the required window: [start_time_ist, end_time_ist)
+                    if log_dt_ist and start_time_ist <= log_dt_ist < end_time_ist:
+                        site_name = row.get('Website Name', 'Unknown Site')
+                        status = row.get('Status', 'Unknown')
+                        ttfb_ms = row.get('HTTP TTFB (ms)')
+                        
+                        # --- 1. Hourly Grid Data ---
+                        log_key = log_dt_ist.strftime("%d %H")
+                        hourly_status.setdefault(site_name, {})
+                        # Always store the latest status for this hour
+                        hourly_status[site_name][log_key] = status
+                        
+                        # --- 2. Summary Metrics Data ---
+                        summary_metrics.setdefault(site_name, {
+                            'total_checks': 0,
+                            'down_checks': 0,
+                            'slow_checks': 0,
+                            'total_ttfb': 0.0,
+                            'ttfb_count': 0
+                        })
+                        
+                        metrics = summary_metrics[site_name]
+                        metrics['total_checks'] += 1
+                        
+                        if status.startswith('Down'):
+                            metrics['down_checks'] += 1
+                        elif 'Slow' in status:
+                             metrics['slow_checks'] += 1
+                        
+                        try:
+                            ttfb_val = float(ttfb_ms)
+                            if ttfb_val > 0:
+                                metrics['total_ttfb'] += ttfb_val
+                                metrics['ttfb_count'] += 1
+                        except Exception:
+                            pass # Skip non-numeric TTFB values
+                        
     except Exception as e:
-        logging.error("Could not read site state file for report: %s. Report skipped.", e)
-        return
-
-    # Filter out any non-dictionary entries or sites without a name
-    valid_states = {name: state for name, state in state_data.items() if isinstance(state, dict)}
-
-    total_sites = len(valid_states)
-    up_count = sum(1 for site in valid_states.values() if site.get('last_status', '').startswith('Up') and 'Slow' not in site.get('last_status', ''))
-    slow_count = sum(1 for site in valid_states.values() if 'Slow' in site.get('last_status', ''))
-    down_count = sum(1 for site in valid_states.values() if site.get('last_status', '').startswith('Down'))
-    unknown_count = total_sites - (up_count + slow_count + down_count)
+        logging.error(f"Error reading or processing log file for report: {e}")
+        return {}, {}, None
     
-    # Get current time in IST
+    return hourly_status, summary_metrics
+
+def generate_and_send_daily_report(now_ist):
+    """Calculates the reporting window and generates the HTML summary."""
+    
     ist_tz = dateutil_tz.gettz('Asia/Kolkata')
-    report_time = datetime.now(ist_tz).strftime("%Y-%m-%d %I:%M %p IST")
     
-    # HTML template for the email report
+    # 1. Determine the exact reporting window (Start Time to End Time)
+    if now_ist.hour == 17 and now_ist.minute == 0: # Evening Report (5:00 PM)
+        report_type = "Daily Business Hours (9 AM to 5 PM)"
+        end_time_ist = now_ist.replace(second=0, microsecond=0)
+        start_time_ist = end_time_ist.replace(hour=9, minute=0, second=0, microsecond=0)
+        
+    elif now_ist.hour == 9 and now_ist.minute == 0: # Morning Report (9:00 AM)
+        report_type = "Overnight & Morning (5 PM to 9 AM)"
+        end_time_ist = now_ist.replace(second=0, microsecond=0)
+        # Start time is 5 PM of the previous day
+        start_time_ist = end_time_ist.replace(hour=17, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        
+    else:
+        # Fallback (should not happen if scheduled correctly)
+        logging.error("Report triggered outside of 9:00 AM or 5:00 PM schedule.")
+        return None 
+    
+    # Use the calculated times to read logs
+    hourly_summary, summary_metrics = generate_hourly_summary(start_time_ist, end_time_ist)
+    
+    if not hourly_summary:
+        logging.warning("No log data available in the required window. Skipping email.")
+        return now_ist.isoformat()
+
+    all_site_names = sorted(summary_metrics.keys())
+    
+    # 2. Determine the full range of reportable hours for the grid
+    hour_range = []
+    current_time_pointer = start_time_ist.replace(minute=0, second=0, microsecond=0)
+    
+    # Iterate from start time (inclusive) to end time (exclusive)
+    while current_time_pointer < end_time_ist:
+        hour_range.append(current_time_pointer)
+        current_time_pointer += timedelta(hours=1)
+        # Safety break
+        if len(hour_range) > 30: break 
+            
+    # 3. Build the HTML content
+    report_time = now_ist.strftime("%Y-%m-%d %I:%M %p IST")
+    report_period = f"**{start_time_ist.strftime('%Y-%m-%d %I:%M %p')}** to **{end_time_ist.strftime('%Y-%m-%d %I:%M %p')}**"
+    
     html_body = f"""
     <html>
     <head>
         <style>
             body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #fcfcfc; }}
-            h2 {{ color: #004d99; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; }}
-            .summary-box {{ padding: 10px 15px; background-color: #f9f9f9; border-radius: 3px; margin-bottom: 20px; font-weight: bold; }}
-            .status-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-            .status-table th, .status-table td {{ border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }}
-            .status-table th {{ background-color: #004d99; color: #fff; }}
-            .status-up {{ background-color: #d4edda; color: #155724; }}
-            .status-slow {{ background-color: #fff3cd; color: #856404; }}
-            .status-down {{ background-color: #f8d7da; color: #721c24; }}
-            .status-unknown {{ background-color: #f8f9fa; color: #333; }}
+            .container {{ max-width: 900px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #fcfcfc; }}
+            h2 {{ color: #004d99; border-bottom: 2px solid #004d99; padding-bottom: 5px; }}
+            h3 {{ color: #008080; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;}}
+            .data-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: auto; }}
+            .data-table th, .data-table td {{ border: 1px solid #ddd; padding: 8px 10px; text-align: left; font-size: 13px; }}
+            .data-table th {{ background-color: #004d99; color: #fff; text-align: center; }}
+            .data-table td:first-child {{ font-weight: bold; text-align: left; }}
+            .data-table .site-name {{ text-align: left; font-weight: bold; width: 180px; }}
+
+            .status-ok {{ color: #155724; }}
+            .status-warn {{ color: #856404; font-weight: bold; }}
+            .status-fail {{ color: #721c24; font-weight: bold; }}
+            
+            /* Hourly Grid Styling */
+            .hourly-grid {{ table-layout: fixed; }}
+            .hourly-grid th {{ font-size: 11px; padding: 3px 0; }}
+            .hourly-grid td {{ padding: 2px 0; font-size: 11px; text-align: center; }}
+            .grid-up {{ background-color: #c3e6cb; }} /* Lighter Green */
+            .grid-slow {{ background-color: #ffeeba; }} /* Yellow */
+            .grid-down {{ background-color: #f5c6cb; }} /* Lighter Red */
+            .grid-none {{ background-color: #f8f9fa; color: #999; }} /* Light Gray */
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>ORSAC Site Monitor - Scheduled Status Report</h2>
-            <p><strong>Report Time:</strong> {report_time}</p>
-            <div class="summary-box">
-                <p>Overall Status: 
-                <span style="color:#155724;">{up_count} UP</span> 
-                | <span style="color:#856404;">{slow_count} UP (Slow)</span> 
-                | <span style="color:#721c24;">{down_count} DOWN</span> 
-                | <span style="color:#333;">{unknown_count} UNKNOWN</span>
-                (Total: {total_sites} sites)</p>
-            </div>
+            <h2>ORSAC Monitor - {report_type} Summary</h2>
+            <p><strong>Report Generated:</strong> {report_time}</p>
+            <p><strong>Reporting Period:</strong> {report_period} IST</p>
+            <p style="border-bottom: 1px solid #ddd; padding-bottom: 10px;">This report summarizes the performance for all monitored sites during the specified period.</p>
 
-            <table class="status-table">
-                <tr><th>Website</th><th>Current Status</th></tr>
+            <h3>1. Executive Performance Summary (Overall Period)</h3>
+            <table class="data-table">
+                <tr>
+                    <th class="site-name">Website Name</th>
+                    <th>Total Checks</th>
+                    <th>Downtime (Checks)</th>
+                    <th>Uptime %</th>
+                    <th>Avg. Response (TTFB)</th>
+                </tr>
     """
-
-    for name, state in valid_states.items():
-        status = state.get('last_status', 'Unknown')
+    
+    # Table 1: Executive Summary Rows
+    for site_name in all_site_names:
+        metrics = summary_metrics[site_name]
         
-        if 'Slow' in status:
-            status_class = 'status-slow'
-        elif status.startswith('Up'):
-            status_class = 'status-up'
-        elif status.startswith('Down'):
-            status_class = 'status-down'
+        total = metrics['total_checks']
+        down = metrics['down_checks']
+        slow = metrics['slow_checks']
+        
+        uptime_percent_val = ((total - down) / total) * 100 if total > 0 else 100.0
+        uptime_percent = f"{uptime_percent_val:.2f}%"
+        
+        # Determine overall status coloring
+        if down > 0:
+            uptime_class = "status-fail"
+        elif slow > 0:
+            uptime_class = "status-warn"
         else:
-            status_class = 'status-unknown'
+            uptime_class = "status-ok"
+
+        # Calculate TTFB
+        avg_ttfb = f"{metrics['total_ttfb'] / metrics['ttfb_count']:.2f} ms" if metrics['ttfb_count'] > 0 else "N/A"
+        
+        down_checks_str = f"{down} (Slow: {slow})"
+        
+        html_body += f"""
+                <tr>
+                    <td class="site-name" style="text-align: left;"><a href="{site_name} URL Placeholder">{site_name}</a></td>
+                    <td>{total}</td>
+                    <td class="{down_class if down > 0 else 'status-ok'}">{down_checks_str}</td>
+                    <td class="{uptime_class}">{uptime_percent}</td>
+                    <td>{avg_ttfb}</td>
+                </tr>
+        """
+    html_body += "</table>"
+    
+    
+    # Table 2: Hourly Activity Grid
+    
+    html_body += f"""
+            <h3>2. Hourly Activity Grid (Last Logged Status per Hour)</h3>
+            <p>Status is for the hour starting at the time shown (IST). Hover over cells for full status details.</p>
+            <table class="data-table hourly-grid">
+                <tr><th class="site-name">Website Name</th>"""
+    
+    # Table Headers (Day HH:00)
+    for dt_obj in hour_range:
+        display_hour = dt_obj.strftime("%H:%M") 
+        html_body += f"<th>{display_hour}</th>"
+    html_body += "</tr>"
+
+    # Table Rows (Site Status)
+    for site_name in all_site_names:
+        html_body += f"<tr><td class='site-name'>{site_name}</td>"
+        
+        for dt_obj in hour_range:
+            log_key = dt_obj.strftime("%d %H")
+            raw_status = hourly_summary.get(site_name, {}).get(log_key, 'No Log')
             
-        html_body += f'<tr><td>{name}</td><td class="{status_class}">{status}</td></tr>'
+            # Simplified Visual Legend for the Grid
+            if raw_status.startswith('Up') and 'Slow' not in raw_status:
+                status_class = 'grid-up'
+                display_char = 'U' 
+            elif 'Slow' in raw_status:
+                status_class = 'grid-slow'
+                display_char = 'S' # S for Slow
+            elif raw_status.startswith('Down'):
+                status_class = 'grid-down'
+                display_char = 'D' # D for Down
+            else:
+                status_class = 'grid-none'
+                display_char = '-'
+            
+            html_body += f'<td class="{status_class}" title="{raw_status}">{display_char}</td>'
+        
+        html_body += "</tr>"
 
     html_body += """
             </table>
-            <p style="margin-top: 25px;"><small>This report shows the current status of all monitored sites as per the last check performed by the backend.</small></p>
+            <p style="margin-top: 15px;">
+                <strong>Legend:</strong> 
+                <span class="grid-up" style="padding: 2px 5px;">U (Up/Normal)</span> 
+                &middot; <span class="grid-slow" style="padding: 2px 5px;">S (Up - Slow)</span> 
+                &middot; <span class="grid-down" style="padding: 2px 5px;">D (Down/Failed)</span>
+                &middot; <span class="grid-none" style="padding: 2px 5px; color: #333;">- (No Check/Log)</span>
+            </p>
         </div>
     </body>
     </html>
     """
 
-    subject = f"ORSAC Monitor Report: {up_count + slow_count} UP / {down_count} DOWN - {datetime.now(ist_tz).strftime('%d-%b %I:%M %p')}"
+    subject = f"ORSAC Monitor {report_type} Summary: {now_ist.strftime('%d-%b %I:%M %p')}"
     _send_email_generic(subject, html_body, is_html=True)
+    
+    # Return the current time to update the DAILY_REPORT_STATE
+    return now_ist.isoformat()
 
 # ---------------------------
 # Wrapper: retries + external verification
@@ -994,7 +1170,6 @@ def diag_url(url):
 # ---------------------------
 def monitor_loop():
     
-    global DAILY_REPORT_STATE
     ist_tz = dateutil_tz.gettz('Asia/Kolkata')
     
     if FORCE_RUN_ON_START:
@@ -1015,40 +1190,47 @@ def monitor_loop():
         start = time.time()
         
         # --- CRITICAL FIX: Reload the state from disk at the beginning of the loop ---
-        # This ensures that if the script crashed and restarted quickly, 
-        # it reads the latest saved status from the disk before checking the schedule.
+        global DAILY_REPORT_STATE
         DAILY_REPORT_STATE = load_report_state() 
         # --- END CRITICAL FIX ---
         
-        # --- NEW: Daily Report Check (FIXED) ---
+        # --- NEW: Daily Report Check ---
         now_ist = datetime.now(ist_tz)
-        today_date = now_ist.date().isoformat()
         
-        # 1. Reset the report state if the day has changed
-        if DAILY_REPORT_STATE["date"] != today_date:
-            DAILY_REPORT_STATE["date"] = today_date
-            DAILY_REPORT_STATE["sent_slots"] = [False] * len(REPORT_TIMES_IST)
-            save_report_state(DAILY_REPORT_STATE)
-            logging.info("New day detected. Daily report schedule reset.")
-
-        # 2. Check all slots
-        report_state_changed = False
-        for i, (report_hour, report_minute) in enumerate(REPORT_TIMES_IST):
-            # Create a datetime object for the specific report time today in IST
+        # Get the time of the last successful report (converted to IST datetime object)
+        last_report_time_ist = parse_time(DAILY_REPORT_STATE.get("last_report_time"))
+        
+        # 1. Check all scheduled slots
+        report_sent = False
+        for report_hour, report_minute in REPORT_TIMES_IST:
+            
+            # Use now_ist's date, then replace hour/minute
             scheduled_time_ist = now_ist.replace(hour=report_hour, minute=report_minute, second=0, microsecond=0)
             
-            # Check if current time is PAST the scheduled time AND the report hasn't been sent for this slot
-            if now_ist >= scheduled_time_ist and not DAILY_REPORT_STATE["sent_slots"][i]:
-                logging.info("Scheduled report time reached (%02d:%02d IST). Generating and sending report.", report_hour, report_minute)
-                generate_and_send_daily_report()
+            # Adjust the scheduled time based on the logic:
+            # If the scheduled time has already passed *since* the last report, assume it refers to the next day.
+            # This correctly handles the 9 AM/5 PM cycle.
+            if scheduled_time_ist < last_report_time_ist:
+                scheduled_time_ist += timedelta(days=1)
+            
+            
+            # Check if current time is PAST the scheduled time AND the scheduled time is newer than the last report time
+            if now_ist >= scheduled_time_ist and scheduled_time_ist > last_report_time_ist:
                 
-                # Mark the report as sent for this time slot
-                DAILY_REPORT_STATE["sent_slots"][i] = True
-                report_state_changed = True
+                logging.info("Scheduled report time reached (%02d:%02d IST). Generating and sending HOURLY SUMMARY.", report_hour, report_minute)
                 
-        # 3. Save state only if a report was sent (or if the date was reset, handled above)
-        if report_state_changed:
-             save_report_state(DAILY_REPORT_STATE)
+                # Generate the report and get the time it was sent
+                # We pass the current time to the function to anchor the report
+                new_report_time_iso = generate_and_send_daily_report(scheduled_time_ist)
+                
+                if new_report_time_iso:
+                    # Update state with the exact time the report was sent
+                    DAILY_REPORT_STATE["last_report_time"] = new_report_time_iso
+                    
+                    # Save the state and break to prevent immediate re-triggering 
+                    save_report_state(DAILY_REPORT_STATE)
+                    report_sent = True
+                    break 
 
         # --- End Daily Report Check ---
 
