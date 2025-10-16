@@ -32,7 +32,6 @@ LOTTIE_URL = "https://lottie.host/17e29621-e0c3-4d6d-88b9-e13768ef6134/x1OQWJ05z
 robot_lottie = None
 if streamlit_lottie and requests:
     try:
-        # Load the Lottie file once and cache it
         @st.cache_data(ttl=3600)
         def fetch_lottie(url):
             return requests.get(url).json()
@@ -348,7 +347,7 @@ def status_color(status):
                 return "#ffc107"  # Amber
             if s.startswith("down") or s in ("down", "offline", "error", "fail", "failed"):
                 return "#dc3545"  # Red
-            if "ping error" in s: 
+            if "ping error" in s: # Added a case for Ping Error
                 return "#fd7e14" # Orange 
     except Exception:
         pass
@@ -463,7 +462,7 @@ def analyze_downtime(site_name, df_latest, threshold_ms, alert_days):
 
 # --- Chart Utility Function ---
 def create_line_chart_options(metric_name, data_points, color, site_names, y_name="Time (ms)", threshold=None):
-    """Generates stable ECharts options for a single metric line graph with dark theme styling."""
+    """Generates stable ECharts options for a single metric line graph with high contrast styling."""
     formatter = "{{b}} <br/> {}: {{c}} {}".format(metric_name, y_name.split(' ')[0])
     
     # Get the data text color defined in the sidebar/session state
@@ -600,7 +599,7 @@ if 'chat_history' not in st.session_state:
 if 's_accent' not in st.session_state: st.session_state.s_accent = "Blue" # Set default accent to Blue
 if 's_data_color' not in st.session_state: st.session_state.s_data_color = "Black"
 if 's_compact' not in st.session_state: st.session_state.s_compact = False
-if 's_watch' not in st.session_state: st.session_state.s_watch = False # Removed watch feature
+if 's_watch' not in st.session_state: st.session_state.s_watch = False
 if 's_watch_interval' not in st.session_state: st.session_state.s_watch_interval = "10 seconds"
 if 's_headline_color' not in st.session_state: st.session_state.s_headline_color = "Black"
 if 's_headline_bg' not in st.session_state: st.session_state.s_headline_bg = "None"
@@ -610,6 +609,38 @@ if 's_headline_bg' not in st.session_state: st.session_state.s_headline_bg = "No
 with st.sidebar:
     # --- Logo and Aesthetics Controls (Restored to sidebar) ---
     st.image("logo.png", width='stretch')
+    
+    # PLACEHOLDER HACK for consistent logo background (only visible if image has transparent BG)
+    st.markdown(
+        """
+        <style>
+        /* Specific targeting for logo container to ensure white background */
+        section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 {{
+            background-color: #F7F8FA !important; /* Panel color */
+            padding: 10px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("---")
+    
+    # === DEVELOPER SIGNATURE ===
+    st.markdown(
+        """
+        <div style="text-align: center; font-size: 14px; color: #111; padding: 10px 0; 
+                    border-radius: 8px;">
+            <strong style="color: #444;">Developed by:</strong><br>
+            <span class="dev-signature" style="font-family: monospace; font-size: 16px; font-weight: 800;">
+                ChinmayachittaranjanBrik
+            </span><br>
+            <em style="color: #666; font-size: 12px;">(Jr. Cloud Architect)</em>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("---")
     st.markdown("## Appearance")
     
@@ -632,23 +663,6 @@ with st.sidebar:
     headline_bg_choice = st.selectbox("Headline background (pill)", options=["None", "Subtle White", "Subtle Blue"], index=0, key='s_headline_bg')
     st.caption("Headlines will be bold and solid color. Background pill helps them stand out.")
     st.markdown("---")
-    
-    # === DEVELOPER SIGNATURE ===
-    st.markdown("---")
-    st.markdown(
-        """
-        <div style="text-align: center; font-size: 14px; color: #111; padding: 10px; 
-                    background: #EEEEEE; 
-                    border-radius: 8px; border: 1px solid #AAA;">
-            <strong style="color: #444;">Developed by:</strong><br>
-            <span style="font-family: monospace; font-size: 16px; color: #000; text-shadow: 1px 1px #fff;">
-                ChinmayachittaranjanBrik
-            </span><br>
-            <em style="color: #666; font-size: 12px; text-shadow: 0.5px 0.5px #CCC;">(Jr. Cloud Architect)</em>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
 
 # Accent map / headline styling (Read from session state)
@@ -709,7 +723,7 @@ css = f"""
     --headline-bg-padding: {headline_bg_padding};
     --headline-bg-radius: {headline_bg_radius};
     --data-text-color: {data_text_color}; /* Controlled by user select */
-    --signature-color: #000; /* Signature Text Color */
+    --signature-color: #222222; /* Signature Text Color */
 }}
 
 body {{
@@ -726,7 +740,7 @@ body {{
     border: 1px solid #E0E0E0; /* Light border for definition */
 }}
 
-/* Sidebar Styling Overrides - Using Gold/Light Blue and ensuring logo is readable */
+/* Sidebar Styling Overrides */
 section[data-testid="stSidebar"] {{
     background-color: var(--sidebar-bg) !important;
     color: var(--text-primary) !important; 
@@ -738,18 +752,6 @@ section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p {{
     color: var(--text-primary) !important;
 }}
-/* Make sidebar logo container background clear against the gold */
-section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 img {{
-    background-color: rgba(255, 255, 255, 0.9);
-    border-radius: 4px;
-}}
-/* Signature 3D Text Shadow */
-section[data-testid="stSidebar"] .stMarkdown .dev-signature span {{
-    color: var(--signature-color) !important;
-    text-shadow: 1.5px 1.5px 0px rgba(0,0,0,0.2), 
-                 2px 2px 0px rgba(255,255,255,0.5); /* Subtle 3D effect on light background */
-}}
-
 
 /* Header Background (Main Window Toolbar) */
 .st-emotion-cache-1r6j0o9 {{ 
@@ -759,6 +761,15 @@ section[data-testid="stSidebar"] .stMarkdown .dev-signature span {{
     background-color: rgba(255, 255, 255, 0.9);
     border-radius: 4px;
 }}
+
+/* Signature 3D Text Shadow - Target the custom class applied to the span */
+.dev-signature span {{
+    color: var(--signature-color) !important;
+    text-shadow: 
+        1.5px 1.5px 0px rgba(0,0,0,0.2), /* Dark shadow below */
+        -1px -1px 0px rgba(255,255,255,0.8); /* Light highlight above */
+}}
+
 
 /* Main title and subheaders */
 .futuristic-title {{
