@@ -362,25 +362,28 @@ def safe_float_or_none(x):
         return None
 
 def format_numeric_columns(df_obj, cols):
-    """Formats numeric columns in a DataFrame, leaving failure strings as-is."""
+    """
+    Formats numeric columns in a DataFrame, leaving failure strings as-is.
+    Ensures Ping values are correctly handled as floats or error strings.
+    """
     for col in cols:
         if col in df_obj.columns:
             def _fmt(x):
+                # Try to handle strings first to retain error messaging
+                sx = str(x).strip()
+                if sx in ["Failed (No Response)", "Library Missing", "No IP/Skipped", "Error", "Failed"]:
+                    return "Ping Error" if col == "Ping (ms)" else "Error"
+                
+                # If it's not a known error string, try to format as a number
                 try:
-                    sx = str(x).strip()
-                    # Only format if it's a number (handles the case where the value is already a string like 'Failed')
-                    if safe_float_or_none(x) is not None:
-                        return f"{float(x):.2f}"
-                    # Handle new failure strings explicitly for cleaner display
-                    if sx in ["Failed (No Response)", "Library Missing", "No IP/Skipped", "Error", "Failed"]:
-                        if col == "Ping (ms)":
-                            # Use a specific message for ping issues in the table
-                            return "Ping Error" 
-                        # Use a more generic error for other timings
-                        return "Error"
-                    return sx
-                except Exception:
-                    return str(x)
+                    val = float(x)
+                    if pd.notna(val):
+                        return f"{val:.2f}"
+                except (ValueError, TypeError):
+                    pass
+                
+                return sx
+            
             df_obj[col] = df_obj[col].apply(_fmt)
     return df_obj
 
@@ -568,7 +571,8 @@ def render_table_with_badges(df_table, title=""):
                 except Exception:
                     cell_content = str(val)
             else:
-                cell_content = "" if pd.isna(val) or str(val).lower() == 'nan' else str(val)
+                # Use the raw formatted value from format_numeric_columns (which handles Ping ms/Error)
+                cell_content = str(val) 
             
             # Align badges/status centered, align text left
             align = "center" if c in ["Sensitive", "Confirmed Down", "Suspect", "Status", "SSL Days Left", "Keyword Check"] else "left"
@@ -610,15 +614,15 @@ with st.sidebar:
     # --- Logo and Aesthetics Controls (Restored to sidebar) ---
     st.image("logo.png", width='stretch')
     
-    # PLACEHOLDER HACK for consistent logo background (only visible if image has transparent BG)
+    # PLACEHOLDER HACK for consistent logo background
     st.markdown(
         """
         <style>
-        /* Specific targeting for logo container to ensure white background */
-        section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 {{
-            background-color: #F7F8FA !important; /* Panel color */
-            padding: 10px;
-        }}
+        /* Target logo container and force light background */
+        section[data-testid="stSidebar"] img {
+            background-color: #F7F8FA !important;
+            border-radius: 4px;
+        }
         </style>
         """,
         unsafe_allow_html=True
@@ -626,10 +630,10 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # === DEVELOPER SIGNATURE ===
+    # === DEVELOPER SIGNATURE (Styled with 3D effect) ===
     st.markdown(
         """
-        <div style="text-align: center; font-size: 14px; color: #111; padding: 10px 0; 
+        <div style="text-align: center; font-size: 14px; color: var(--text-primary); padding: 10px 0; 
                     border-radius: 8px;">
             <strong style="color: #444;">Developed by:</strong><br>
             <span class="dev-signature" style="font-family: monospace; font-size: 16px; font-weight: 800;">
