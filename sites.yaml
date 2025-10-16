@@ -1,0 +1,115 @@
+# Configuration for ORSAC Website Monitor (enhanced) — updated
+settings:
+  response_time_threshold: 3000   # ms — Up (Slow) threshold
+  ssl_alert_days: 30              # days — used for SSL coloring/alerts
+  monitor_interval: 1800          # seconds (backend run interval)
+  default_timeout: 10             # seconds for HTTP requests (override per-site)
+  use_icmp_by_default: true       # whether to attempt ICMP ping by default
+  log_file: "website_monitor_log.csv"
+
+sites:
+  - name: "Forest GIS (OFMS)"
+    url: "https://odishaforestgis.in/ofms/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Odisha Forest"
+    confirm_strategy: "all"
+    notes: "Main GIS application"
+
+  - name: "Odisha Map Server"
+    url: "https://mapserver.odishaforestgis.in/geoserver/web/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: false
+    keyword: "Welcome"
+    confirm_strategy: "all"
+    notes: "Welcome"
+
+  - name: "SMPB Odisha"
+    url: "https://smpbodisha.in/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Medicinal Plants"
+    confirm_strategy: "all"
+
+  - name: "CAMPA Odisha"
+    url: "https://campa.odisha.gov.in/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "CAMPA"
+    confirm_strategy: "all"
+
+  - name: "Kendu Leaves Portal"
+    url: "https://kenduleaves.odisha.gov.in/"
+    enabled: true
+    timeout: 12
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Kendu"
+    confirm_strategy: "all"
+
+  - name: "Odisha Forest Main Portal"
+    url: "https://odishaforest.in/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Forest"
+    confirm_strategy: "all"
+
+  - name: "Wildlife Anukampa"
+    url: "https://www.odwlanukampa.in/index.php/home/applications"
+    enabled: true
+    timeout: 12
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Anukampa"
+    confirm_strategy: "all"
+
+  - name: "Odisha Bamboo"
+    url: "https://www.odishabamboo.org/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Bamboo"
+    confirm_strategy: "all"
+
+  - name: "OFS Disposition List (HRD)"
+    url: "https://hrd.odishaforest.in/index.php/admin/login"
+    enabled: true
+    timeout: 15
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Forest HRD"
+    confirm_strategy: "all"
+    notes: >
+      Combined HRD check: monitors HTTPS login page and keyword "Forest HRD".
+      HTTP root redirect is handled internally and not shown as separate site.
+
+  - name: "TT Permit Odisha"
+    url: "https://www.ttpermitodisha.in/"
+    enabled: true
+    timeout: 10
+    expected_status: 200
+    use_icmp: true
+    check_keyword: true
+    keyword: "Permit"
+    confirm_strategy: "all"
+    notes: "New site added"

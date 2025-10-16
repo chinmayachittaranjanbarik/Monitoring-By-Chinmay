@@ -1,0 +1,62 @@
+{
+  "Forest GIS (OFMS)": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "Odisha Map Server": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "SMPB Odisha": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "CAMPA Odisha": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "Kendu Leaves Portal": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "Odisha Forest Main Portal": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "Wildlife Anukampa": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "Odisha Bamboo": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "OFS Disposition List (HRD)": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  },
+  "TT Permit Odisha": {
+    "consecutive_failures": 0,
+    "down_since": null,
+    "alert_sent": false,
+    "last_status": "Up"
+  }
+}

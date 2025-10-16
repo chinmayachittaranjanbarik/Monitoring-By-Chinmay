@@ -1,0 +1,18 @@
+# Core Streamlit application and data processing
+streamlit
+pandas
+numpy
+
+# Core backend and environment utilities
+requests
+python-dotenv
+filelock
+PyYAML
+python-dateutil
+dnspython
+icmplib
+
+# Streamlit UI Visualization components
+streamlit-echarts
+streamlit-autorefresh
+streamlit-lottie
