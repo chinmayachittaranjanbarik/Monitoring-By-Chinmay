@@ -32,6 +32,7 @@ LOTTIE_URL = "https://lottie.host/17e29621-e0c3-4d6d-88b9-e13768ef6134/x1OQWJ05z
 robot_lottie = None
 if streamlit_lottie and requests:
     try:
+        # Load the Lottie file once and cache it
         @st.cache_data(ttl=3600)
         def fetch_lottie(url):
             return requests.get(url).json()
@@ -481,8 +482,8 @@ def create_line_chart_options(metric_name, data_points, color, site_names, y_nam
             "borderWidth": 1,
             "textStyle": {"color": "#222222"}
         },
-        "xAxis": {"type": "category", "data": site_names, "axisLabel": {"rotate": 35, "interval": 0, "margin": 10, "color": data_text_color, "fontSize": 10}}, 
-        "yAxis": {"type": "value", "name": y_name, "nameTextStyle": {"color": data_text_color}, "axisLabel": {"color": data_text_color}}, 
+        "xAxis": {"type": "category", "data": site_names, "axisLabel": {"rotate": 35, "interval": 0, "margin": 10, "color": data_text_color, "fontSize": 10}}, # Updated color and rotation
+        "yAxis": {"type": "value", "name": y_name, "nameTextStyle": {"color": data_text_color}, "axisLabel": {"color": data_text_color}}, # Updated color
         "series": [ {
             "name": metric_name, 
             "type": "line", 
@@ -499,7 +500,7 @@ def create_line_chart_options(metric_name, data_points, color, site_names, y_nam
                 "data": markline_data
             }
         } ],
-        "grid": {"bottom": "30%", "top": "15%", "containLabel": True, "left": "5%", "right": "5%"}, 
+        "grid": {"bottom": "30%", "top": "15%", "containLabel": True, "left": "5%", "right": "5%"}, # Adjusted grid for better fit
         "dataZoom": [{"type": 'slider', "xAxisIndex": 0, "filterMode": 'none', "backgroundColor": "#DDD", "dataBackground": {"areaStyle": {"color": "#AAA"}}, "fillerColor": "rgba(0, 123, 255, 0.4)"}],
         "backgroundColor": "transparent"
     }
@@ -599,7 +600,7 @@ if 'chat_history' not in st.session_state:
 if 's_accent' not in st.session_state: st.session_state.s_accent = "Blue" # Set default accent to Blue
 if 's_data_color' not in st.session_state: st.session_state.s_data_color = "Black"
 if 's_compact' not in st.session_state: st.session_state.s_compact = False
-if 's_watch' not in st.session_state: st.session_state.s_watch = True
+if 's_watch' not in st.session_state: st.session_state.s_watch = False # Removed watch feature
 if 's_watch_interval' not in st.session_state: st.session_state.s_watch_interval = "10 seconds"
 if 's_headline_color' not in st.session_state: st.session_state.s_headline_color = "Black"
 if 's_headline_bg' not in st.session_state: st.session_state.s_headline_bg = "None"
@@ -624,10 +625,7 @@ with st.sidebar:
     st.session_state.data_text_color_css = data_text_color
     
     compact = st.checkbox("Compact mode (denser layout)", value=False, key='s_compact')
-    show_watch = st.checkbox("Show lightweight digital watch (low-impact)", value=True, key='s_watch',
-                             help="Only digital time; updates at chosen interval. Default ON.")
-    watch_interval_label = st.selectbox("Watch update interval", options=["5 seconds", "10 seconds", "30 seconds"], index=1, key='s_watch_interval') if show_watch else None
-
+    
     st.markdown("---")
     st.markdown("### Headline styling")
     headline_color_choice = st.selectbox("Headline color", options=["Black", "Blue", "Gray"], index=0, key='s_headline_color')
@@ -646,7 +644,7 @@ with st.sidebar:
             <span style="font-family: monospace; font-size: 16px; color: #000; text-shadow: 1px 1px #fff;">
                 ChinmayachittaranjanBrik
             </span><br>
-            <em style="color: #666; font-size: 12px;">(Jr. Cloud Architect)</em>
+            <em style="color: #666; font-size: 12px; text-shadow: 0.5px 0.5px #CCC;">(Jr. Cloud Architect)</em>
         </div>
         """,
         unsafe_allow_html=True
@@ -711,6 +709,7 @@ css = f"""
     --headline-bg-padding: {headline_bg_padding};
     --headline-bg-radius: {headline_bg_radius};
     --data-text-color: {data_text_color}; /* Controlled by user select */
+    --signature-color: #000; /* Signature Text Color */
 }}
 
 body {{
@@ -724,9 +723,10 @@ body {{
     border-radius: 12px;
     padding: 20px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.05); /* Subtle shadow on main content */
+    border: 1px solid #E0E0E0; /* Light border for definition */
 }}
 
-/* Sidebar Styling Overrides */
+/* Sidebar Styling Overrides - Using Gold/Light Blue and ensuring logo is readable */
 section[data-testid="stSidebar"] {{
     background-color: var(--sidebar-bg) !important;
     color: var(--text-primary) !important; 
@@ -738,14 +738,25 @@ section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p {{
     color: var(--text-primary) !important;
 }}
+/* Make sidebar logo container background clear against the gold */
+section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 img {{
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 4px;
+}}
+/* Signature 3D Text Shadow */
+section[data-testid="stSidebar"] .stMarkdown .dev-signature span {{
+    color: var(--signature-color) !important;
+    text-shadow: 1.5px 1.5px 0px rgba(0,0,0,0.2), 
+                 2px 2px 0px rgba(255,255,255,0.5); /* Subtle 3D effect on light background */
+}}
 
-/* Logo and Header Background (Main Window Toolbar) */
+
+/* Header Background (Main Window Toolbar) */
 .st-emotion-cache-1r6j0o9 {{ 
     background-color: var(--bg); 
 }}
 .st-emotion-cache-1r6j0o9 img {{ 
-    /* Logo should stand out slightly */
-    background-color: transparent;
+    background-color: rgba(255, 255, 255, 0.9);
     border-radius: 4px;
 }}
 
@@ -831,16 +842,6 @@ st.markdown(css, unsafe_allow_html=True)
 
 # Autorefresh: low-pressure UI refresh (60s) and optional watch refresh
 st_autorefresh(interval=60 * 1000, key="refresh_ui_hidden")
-
-watch_interval_ms = None
-if st.session_state.s_watch:
-    if st.session_state.s_watch_interval == "5 seconds":
-        watch_interval_ms = 5 * 1000
-    elif st.session_state.s_watch_interval == "10 seconds":
-        watch_interval_ms = 10 * 1000
-    else:
-        watch_interval_ms = 30 * 1000
-    st_autorefresh(interval=watch_interval_ms, key="refresh_ui_watch")
 
 # --- Load Data (Needs to be here for sidebar bot and main content) ---
 df = load_data()
@@ -1036,6 +1037,16 @@ st.markdown("---")
 # ==========================================================
 st.markdown("<h2 class='futuristic-sub'>LATEST MONITORING SNAPSHOT (Compact)</h2>", unsafe_allow_html=True)
 
+# Download button for the snapshot data
+snapshot_csv = convert_df_to_csv(df_latest)
+st.download_button(
+    label="⬇️ Download Snapshot Data (CSV)",
+    data=snapshot_csv,
+    file_name=f'orsac_snapshot_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
+    mime='text/csv',
+    key='download_snapshot_button'
+)
+
 # Define the highly compact columns for the latest status (UPDATED to use TTFB/TLS)
 snapshot_cols = [c for c in [
     "Website Name", "Status", "Sensitive", "Confirmed Down", "Suspect", 
@@ -1075,6 +1086,8 @@ st.markdown("---")
 # ==========================================================
 # 3. DETAILED EVENT LOG (Paginated Table)
 # ==========================================================
+st.markdown("<h2 class='futuristic-sub'>DETAILED EVENT LOG</h2>", unsafe_allow_html=True) # Changed title slightly for clarity
+
 # Get all log data sorted by time
 df_log = df.sort_values("DateTime", ascending=False).copy()
 TOTAL_LOG_ROWS = len(df_log)
@@ -1090,19 +1103,14 @@ end_idx = min(end_idx, TOTAL_LOG_ROWS)
 download_log_col, _ = st.columns([0.25, 0.75])
 with download_log_col:
     st.download_button(
-        label="⬇️ Download Full Log CSV",
+        label=f"⬇️ Download Full Log ({TOTAL_LOG_ROWS} rows)",
         data=convert_df_to_csv(df_log),
         file_name=f'orsac_monitor_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
         mime='text/csv',
-        use_container_width=True,
-        help="Download the complete history of monitoring events."
+        key='download_full_log'
     )
-st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True) # Spacer
+st.markdown(f"<p style='font-size: 14px; margin-top: 10px; color: var(--text-secondary);'>Showing entries {start_idx + 1} to {end_idx} of {TOTAL_LOG_ROWS}</p>", unsafe_allow_html=True)
 
-
-# Fix: Use custom styled markdown for the subheading to ensure visibility
-log_title = f"Detailed Event Log — Entries {start_idx + 1} to {end_idx} of {TOTAL_LOG_ROWS}"
-st.markdown(f"<h2 class='futuristic-sub'>{log_title}</h2>", unsafe_allow_html=True)
 
 # Slice the data to get the current page's entries
 last_n = df_log.iloc[start_idx:end_idx].copy()
@@ -1158,9 +1166,6 @@ with log_nav_cols[3]:
     if st.button("Next", disabled=current_page >= MAX_PAGES - 1, key="next_log"):
         st.session_state.event_log_page += 1
         st.rerun()
-
-with log_nav_cols[2]:
-    st.markdown(f"<div style='text-align:center; padding-top: 8px; color:#999; font-size: 14px;'>Page {current_page + 1} of {MAX_PAGES}</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
