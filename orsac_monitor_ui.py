@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-# FIX: Import Timeout to prevent "name 'Timeout' is not defined" error during process launch
 from filelock import FileLock, Timeout 
 from dotenv import dotenv_values
 from streamlit_echarts import st_echarts
@@ -29,12 +28,10 @@ except ImportError:
 
 # --- Robot Constants ---
 ROBOT_NAME = "ORSA-AI"
-# This Lottie file gives a humorous, bouncing robot effect (replace if you have a local file)
 LOTTIE_URL = "https://lottie.host/17e29621-e0c3-4d6d-88b9-e13768ef6134/x1OQWJ05z9.json" 
 robot_lottie = None
 if streamlit_lottie and requests:
     try:
-        # Load the Lottie file once and cache it
         @st.cache_data(ttl=3600)
         def fetch_lottie(url):
             return requests.get(url).json()
@@ -202,6 +199,7 @@ if START_BACKEND and 'monitor_process' not in st.session_state:
 # Data Loading and Utility Functions
 # ------------------------------
 def parse_dt_flexible_scalar(x):
+    """Parses a flexible date string to a timezone-aware Pandas Timestamp."""
     try:
         if pd.isna(x):
             return pd.NaT
@@ -220,6 +218,7 @@ def parse_dt_flexible_scalar(x):
 
 # FIX: Corrected function to handle FutureWarning by explicit casting
 def parse_dt_flexible_series(series):
+    """Applies flexible date parsing across a Pandas Series."""
     try:
         parsed = pd.to_datetime(series, utc=True, errors="coerce")
     except Exception:
@@ -237,6 +236,7 @@ def parse_dt_flexible_series(series):
     return parsed
 
 def to_ist_string(ts):
+    """Converts UTC timestamp to IST string format."""
     try:
         t = parse_dt_flexible_scalar(ts)
         if pd.isna(t):
@@ -260,7 +260,6 @@ def convert_df_to_csv(df):
 def load_data():
     """
     Loads and preprocesses data from the log CSV file.
-    Removed all references to the deprecated/removed Keyword Check feature.
     """
     if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
         return pd.DataFrame()
@@ -278,8 +277,6 @@ def load_data():
     for c in df.select_dtypes(include=["object"]).columns: df[c] = df[c].astype(str).str.strip().replace({"nan": ""})
     
     # --- Clean up Old/Deprecated Columns ---
-    # NOTE: The backend now includes Keyword Check, so we only drop deprecated performance columns
-    # We rely on pd.read_csv to handle the presence of "Keyword Check"
     df = df.drop(columns=["HTTP Time (ms)", "Domain Days Left", "Domain Expiry Date"], errors='ignore')
 
     # List of all numeric columns, including the new phase timings
@@ -311,6 +308,7 @@ def load_data():
     return df
 
 def load_sites_yaml(path=CONFIG_FILE):
+    """Loads site configuration from the YAML file."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
@@ -319,6 +317,7 @@ def load_sites_yaml(path=CONFIG_FILE):
         return []
 
 def load_site_state(path=SITE_STATE_FILE):
+    """Loads persistent site state for alerting logic."""
     if not os.path.exists(path):
         return {}
     
@@ -644,7 +643,7 @@ with st.sidebar:
                     border-radius: 8px; border: 1px solid #111;">
             <strong style="color: #444;">Developed by:</strong><br>
             <span style="font-family: monospace; font-size: 16px; color: #111; text-shadow: 1px 1px #fff;">
-                Chinmaya
+                ChinmayachittaranjanBrik
             </span><br>
             <em style="color: #666; font-size: 12px;">(Jr. Cloud Architect)</em>
         </div>
