@@ -342,16 +342,16 @@ def status_color(status):
         if isinstance(status, str):
             s = status.strip().lower()
             if s.startswith("up") or s in ("up", "ok", "online"):
-                return "#1ef287"  # neon-lime
+                return "#198754"  # Green
             if "slow" in s or "warning" in s:
-                return "#ffd166"  # amber
+                return "#ffc107"  # Amber
             if s.startswith("down") or s in ("down", "offline", "error", "fail", "failed"):
-                return "#ff4d6d"  # neon-red
-            if "ping error" in s: # Added a case for Ping Error
-                return "#FF8C42" # Orange for network/DNS-related issues
+                return "#dc3545"  # Red
+            if "ping error" in s: 
+                return "#fd7e14" # Orange 
     except Exception:
         pass
-    return "#6c7680"  # muted gray
+    return "#6c757d"  # Gray
 
 def safe_float_or_none(x):
     """Converts numeric values to float, returns None if non-numeric/failure string."""
@@ -466,7 +466,7 @@ def create_line_chart_options(metric_name, data_points, color, site_names, y_nam
     formatter = "{{b}} <br/> {}: {{c}} {}".format(metric_name, y_name.split(' ')[0])
     
     # Get the data text color defined in the sidebar/session state
-    data_text_color = st.session_state.get("data_text_color_css", "#FFFFFF")
+    data_text_color = st.session_state.get("data_text_color_css", "#222222") # Default to dark text
 
     markline_data = []
     if threshold is not None:
@@ -476,13 +476,13 @@ def create_line_chart_options(metric_name, data_points, color, site_names, y_nam
         "tooltip": {
             "trigger": "axis", 
             "formatter": formatter,
-            "backgroundColor": "rgba(10, 10, 10, 0.95)",
+            "backgroundColor": "#FFFFFF", # Light background for tooltips
             "borderColor": color,
             "borderWidth": 1,
-            "textStyle": {"color": "#FFF"}
+            "textStyle": {"color": "#222222"}
         },
-        "xAxis": {"type": "category", "data": site_names, "axisLabel": {"rotate": 35, "interval": 0, "margin": 10, "color": data_text_color, "fontSize": 10}}, # Updated color and rotation
-        "yAxis": {"type": "value", "name": y_name, "nameTextStyle": {"color": data_text_color}, "axisLabel": {"color": data_text_color}}, # Updated color
+        "xAxis": {"type": "category", "data": site_names, "axisLabel": {"rotate": 35, "interval": 0, "margin": 10, "color": data_text_color, "fontSize": 10}}, 
+        "yAxis": {"type": "value", "name": y_name, "nameTextStyle": {"color": data_text_color}, "axisLabel": {"color": data_text_color}}, 
         "series": [ {
             "name": metric_name, 
             "type": "line", 
@@ -492,15 +492,15 @@ def create_line_chart_options(metric_name, data_points, color, site_names, y_nam
             "symbol": "circle",
             "symbolSize": 8,
             "showSymbol": True,
-            "areaStyle": {"opacity": 0.06},
+            "areaStyle": {"opacity": 0.1, "color": color}, # Subtly tinted area
             "markLine": {
                 "silent": True,
-                "lineStyle": {"type": "dashed", "color": "#FFD700"},
+                "lineStyle": {"type": "dashed", "color": "#FF8C42"},
                 "data": markline_data
             }
         } ],
-        "grid": {"bottom": "30%", "top": "15%", "containLabel": True, "left": "5%", "right": "5%"}, # Adjusted grid for better fit
-        "dataZoom": [{"type": 'slider', "xAxisIndex": 0, "filterMode": 'none', "backgroundColor": "#333", "dataBackground": {"areaStyle": {"color": "#555"}}, "fillerColor": "rgba(0, 255, 255, 0.4)"}],
+        "grid": {"bottom": "30%", "top": "15%", "containLabel": True, "left": "5%", "right": "5%"}, 
+        "dataZoom": [{"type": 'slider', "xAxisIndex": 0, "filterMode": 'none', "backgroundColor": "#DDD", "dataBackground": {"areaStyle": {"color": "#AAA"}}, "fillerColor": "rgba(0, 123, 255, 0.4)"}],
         "backgroundColor": "transparent"
     }
 
@@ -544,12 +544,13 @@ def render_table_with_badges(df_table, title=""):
             elif c == "Status":
                 s = str(val).strip()
                 arrow = ""
+                # Use standard colors defined by the CSS variables
                 if s.lower().startswith("up") and "slow" not in s.lower():
-                    arrow = " 🟢"
+                    arrow = " <span style='color: var(--status-up);'>●</span>"
                 elif "slow" in s.lower():
-                    arrow = " 🟡"
+                    arrow = " <span style='color: var(--status-warn);'>●</span>"
                 elif s.lower().startswith("down") or "error" in s.lower() or "fail" in s.lower():
-                    arrow = " 🔴"
+                    arrow = " <span style='color: var(--status-down);'>●</span>"
                 cell_content = f"<b>{s}</b>{arrow}"
             elif c == "Keyword Check":
                 s = str(val).strip().lower()
@@ -590,17 +591,17 @@ st.set_page_config(page_title="ORSAC Monitor", layout="wide", initial_sidebar_st
 if 'event_log_page' not in st.session_state:
     st.session_state.event_log_page = 0
 if 'data_text_color_css' not in st.session_state:
-    st.session_state.data_text_color_css = "#FFFFFF" # Default white
+    st.session_state.data_text_color_css = "#222222" # Default dark text for white background
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = [] 
 
 # Initializing default keys for sidebar controls (FIXED: Moved to top level)
-if 's_accent' not in st.session_state: st.session_state.s_accent = "Cyan"
-if 's_data_color' not in st.session_state: st.session_state.s_data_color = "White"
+if 's_accent' not in st.session_state: st.session_state.s_accent = "Blue" # Set default accent to Blue
+if 's_data_color' not in st.session_state: st.session_state.s_data_color = "Black"
 if 's_compact' not in st.session_state: st.session_state.s_compact = False
 if 's_watch' not in st.session_state: st.session_state.s_watch = True
 if 's_watch_interval' not in st.session_state: st.session_state.s_watch_interval = "10 seconds"
-if 's_headline_color' not in st.session_state: st.session_state.s_headline_color = "White"
+if 's_headline_color' not in st.session_state: st.session_state.s_headline_color = "Black"
 if 's_headline_bg' not in st.session_state: st.session_state.s_headline_bg = "None"
 
 
@@ -612,14 +613,14 @@ with st.sidebar:
     st.markdown("## Appearance")
     
     # Use keys for select boxes to store state
-    accent = st.selectbox("Accent Color", options=["Cyan", "Magenta", "Lime", "Yellow"], index=0, key='s_accent')
+    accent = st.selectbox("Accent Color", options=["Blue", "Cyan", "Magenta", "Lime", "Yellow"], index=0, key='s_accent')
     
     DATA_COLOR_MAP = {
-        "White": "#FFFFFF", "Light Gray": "#D8DFE6", "Aqua": "#B8FFFF", "Pale Yellow": "#FFFFA0"
+        "Black": "#222222", "Gray": "#444444", "Blue": "#007BFF"
     }
     
     data_color_choice = st.selectbox("Data Text Color", options=list(DATA_COLOR_MAP.keys()), index=0, key='s_data_color')
-    data_text_color = DATA_COLOR_MAP.get(data_color_choice, "#FFFFFF")
+    data_text_color = DATA_COLOR_MAP.get(data_color_choice, "#222222")
     st.session_state.data_text_color_css = data_text_color
     
     compact = st.checkbox("Compact mode (denser layout)", value=False, key='s_compact')
@@ -629,20 +630,20 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Headline styling")
-    headline_color_choice = st.selectbox("Headline color", options=["White", "Cyan", "Magenta", "Lime", "Yellow", "Orange", "LightGray", "Black"], index=0, key='s_headline_color')
-    headline_bg_choice = st.selectbox("Headline background (pill)", options=["None", "Subtle Dark", "Subtle Light", "Accent Muted"], index=0, key='s_headline_bg')
-    st.caption("Headlines will be bold and solid color. Background pill helps them stand out if you choose one.")
+    headline_color_choice = st.selectbox("Headline color", options=["Black", "Blue", "Gray"], index=0, key='s_headline_color')
+    headline_bg_choice = st.selectbox("Headline background (pill)", options=["None", "Subtle White", "Subtle Blue"], index=0, key='s_headline_bg')
+    st.caption("Headlines will be bold and solid color. Background pill helps them stand out.")
     st.markdown("---")
     
     # === DEVELOPER SIGNATURE ===
     st.markdown("---")
     st.markdown(
         """
-        <div style="text-align: center; font-size: 14px; color: #000; padding: 10px; 
-                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.9)); 
-                    border-radius: 8px; border: 1px solid #111;">
+        <div style="text-align: center; font-size: 14px; color: #111; padding: 10px; 
+                    background: #EEEEEE; 
+                    border-radius: 8px; border: 1px solid #AAA;">
             <strong style="color: #444;">Developed by:</strong><br>
-            <span style="font-family: monospace; font-size: 16px; color: #111; text-shadow: 1px 1px #fff;">
+            <span style="font-family: monospace; font-size: 16px; color: #000; text-shadow: 1px 1px #fff;">
                 ChinmayachittaranjanBrik
             </span><br>
             <em style="color: #666; font-size: 12px;">(Jr. Cloud Architect)</em>
@@ -654,35 +655,31 @@ with st.sidebar:
 
 # Accent map / headline styling (Read from session state)
 ACENT_MAP = {
-    "Cyan": {"neon": "#00FFFF", "muted": "#00AAB5"},
-    "Magenta": {"neon": "#FF33CC", "muted": "#AA2E84"},
-    "Lime": {"neon": "#B7FF33", "muted": "#6EA200"},
-    "Yellow": {"neon": "#FFD700", "muted": "#CCAA00"}
+    "Blue": {"neon": "#007BFF", "muted": "#0056b3"},
+    "Cyan": {"neon": "#17A2B8", "muted": "#008899"},
+    "Magenta": {"neon": "#DC3545", "muted": "#BB2C37"},
+    "Lime": {"neon": "#28A745", "muted": "#198754"},
+    "Yellow": {"neon": "#FFC107", "muted": "#D39E00"}
 }
-accent_neon = ACENT_MAP.get(st.session_state.s_accent, ACENT_MAP["Cyan"])["neon"]
-accent_muted = ACENT_MAP.get(st.session_state.s_accent, ACENT_MAP["Cyan"])["muted"]
+accent_neon = ACENT_MAP.get(st.session_state.s_accent, ACENT_MAP["Blue"])["neon"]
+accent_muted = ACENT_MAP.get(st.session_state.s_accent, ACENT_MAP["Blue"])["muted"]
 
 HEADLINE_COLOR_MAP = {
-    "White": "#FFFFFF", "Cyan": "#00FFFF", "Magenta": "#FF33CC", "Lime": "#B7FF33", 
-    "Yellow": "#FFD166", "Orange": "#FF8C42", "LightGray": "#D8DFE6", "Black": "#000000"
+    "Black": "#222222", "Blue": "#007BFF", "Gray": "#444444"
 }
-headline_color = HEADLINE_COLOR_MAP.get(st.session_state.s_headline_color, "#FFFFFF")
+headline_color = HEADLINE_COLOR_MAP.get(st.session_state.s_headline_color, "#222222")
 
 headline_bg_choice = st.session_state.s_headline_bg
 if headline_bg_choice == "None":
     headline_bg = "transparent"
     headline_bg_padding = "0"
     headline_bg_radius = "0"
-elif headline_bg_choice == "Subtle Dark":
-    headline_bg = "rgba(255,255,255,0.03)"
+elif headline_bg_choice == "Subtle White":
+    headline_bg = "rgba(255,255,255,0.8)"
     headline_bg_padding = "6px 10px"
     headline_bg_radius = "6px"
-elif headline_bg_choice == "Subtle Light":
-    headline_bg = "rgba(255,255,255,0.06)"
-    headline_bg_padding = "6px 10px"
-    headline_bg_radius = "6px"
-else:  # Accent Muted
-    headline_bg = accent_muted
+else:  # Subtle Blue
+    headline_bg = "rgba(0, 123, 255, 0.1)"
     headline_bg_padding = "6px 10px"
     headline_bg_radius = "6px"
 
@@ -694,70 +691,61 @@ css = f"""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
 
 :root {{
-    --bg: #010408; 
-    --panel: #0a1930; 
-    --glass: rgba(255,255,255,0.06);
+    /* Professional White Theme Colors */
+    --bg: #FFFFFF; 
+    --panel: #F7F8FA; /* Card/Content background */
+    --text-primary: #222222;
+    --text-secondary: #6c757d;
     
+    /* Status Colors (Bootstrap style) */
+    --status-up: #198754; 
+    --status-warn: #ffc107; 
+    --status-down: #dc3545; 
+    --sidebar-bg: #E9ECEF; /* Very light gray/blue for sidebar contrast */
+
+    /* Accent Colors */
     --accent: {accent_neon};
     --accent-muted: {accent_muted};
     --headline-color: {headline_color};
     --headline-bg: {headline_bg};
     --headline-bg-padding: {headline_bg_padding};
     --headline-bg-radius: {headline_bg_radius};
-    --data-text-color: {data_text_color}; 
-    
-    --status-up: #1ef287;   
-    --status-warn: #ffd166; 
-    --status-down: #ff4d6d; 
-    --sidebar-bg-gold: #cda445; /* Gold color for the entire sidebar */
+    --data-text-color: {data_text_color}; /* Controlled by user select */
 }}
 
 body {{
     background: var(--bg);
-    color: var(--data-text-color) !important; 
+    color: var(--text-primary) !important; 
     font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }}
 
-@keyframes pulse {{
-    0% {{ box-shadow: 0 0 10px rgba(0,255,255,0.0); }}
-    50% {{ box-shadow: 0 0 20px rgba(0,255,255,0.2); }}
-    100% {{ box-shadow: 0 0 10px rgba(0,255,255,0.0); }}
-}}
-
 .stApp .block-container {{
-    background: var(--panel); 
+    background: var(--bg); 
     border-radius: 12px;
     padding: 20px;
-    border: 1px solid rgba(255,255,255,0.05); 
-    box-shadow: 0 10px 35px rgba(0,0,0,0.8);
-    animation: pulse 4s infinite alternate; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05); /* Subtle shadow on main content */
 }}
 
-/* Sidebar Styling Overrides - Using Gold and ensuring logo is readable */
+/* Sidebar Styling Overrides */
 section[data-testid="stSidebar"] {{
-    background-color: var(--sidebar-bg-gold) !important;
-    color: #111 !important; 
+    background-color: var(--sidebar-bg) !important;
+    color: var(--text-primary) !important; 
 }}
-/* Ensure elements in the sidebar are readable against the gold background */
+/* Ensure all text in the sidebar is dark and readable */
 section[data-testid="stSidebar"] .stMarkdown h3,
 section[data-testid="stSidebar"] .stMarkdown h2,
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p {{
-    color: #000 !important;
-}}
-/* Make sidebar logo container background clear against the gold */
-section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 img {{
-    background-color: rgba(255, 255, 255, 0.9);
-    border-radius: 4px;
+    color: var(--text-primary) !important;
 }}
 
-/* Header Background (Main Window Toolbar) */
+/* Logo and Header Background (Main Window Toolbar) */
 .st-emotion-cache-1r6j0o9 {{ 
-    background-color: rgba(255, 255, 255, 0.1); 
-    padding: 10px;
+    background-color: var(--bg); 
 }}
 .st-emotion-cache-1r6j0o9 img {{ 
-    background-color: rgba(255, 255, 255, 0.9);
+    /* Logo should stand out slightly */
+    background-color: transparent;
     border-radius: 4px;
 }}
 
@@ -783,13 +771,14 @@ section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 img {{
     background: var(--headline-bg);
 }}
 
-/* KPI Card Styling */
+/* KPI Card Styling - High Contrast */
 .kpi-card {{
-    background: #102038; 
+    background: var(--panel); 
     padding: 15px;
-    border-radius: 8px;
+    border-radius: 6px;
     text-align: center;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid #DDD;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* Clean, professional shadow */
     transition: all 0.3s ease-in-out;
 }}
 
@@ -801,30 +790,39 @@ section[data-testid="stSidebar"] .st-emotion-cache-1r6j0o9 img {{
 .kpi-value {{
     font-size: 30px; 
     font-weight: 800;
-    color: var(--data-text-color) !important; 
+    color: var(--text-primary) !important; /* Always dark text */
+}}
+.kpi-label {{
+    color: var(--text-secondary) !important;
 }}
 
-/* Table Visibility & Compactness Improvements */
+/* Table Styling */
+.stDataFrame {{
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--panel); 
+    border: 1px solid #CCC; 
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); 
+    font-size: 13px;
+}}
+
 table.dataframe thead th {{
-    background: #152a42 !important; 
-    color: #FFFFFF !important; 
+    background: #E9ECEF !important; /* Light header background */
+    color: var(--text-primary) !important; 
     border-bottom: 2px solid var(--accent) !important; 
 }}
 table.dataframe tbody td {{
-    color: var(--data-text-color) !important; 
-    border-bottom: 1px solid #1a3353 !important; 
+    color: var(--text-primary) !important; 
+    border-bottom: 1px solid #EEE !important; 
 }}
 
-/* Badges for sensitive/confirmed/suspect */
-.badge-sens {{ background: linear-gradient(90deg,#FF33CC,#B7288A); color:white; }}
-.badge-confirm {{ background: linear-gradient(90deg,#ff4d6d,#d12b3a); color:white; }}
-.badge-suspect {{ background: linear-gradient(90deg,#ffd166,#d99b2b); color:black; }}
-
-/* Streamlit button custom style */
-.stButton>button {{
-    background-color: var(--accent-muted) !important;
-    color: black !important;
-    font-weight: 800 !important;
+/* Chatbot Container */
+div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {{
+    background-color: var(--panel); /* Light card background for the chat/bot area */
+    border-radius: 8px;
+    padding: 10px;
+    border: 1px solid #DDD;
+    margin-bottom: 20px;
 }}
 </style>
 """
@@ -1183,62 +1181,62 @@ def get_series_data(metric_name, color):
     return data_points
 
 # --- Ping Time (Mandatory Ping Check) ---
-ping_data = get_series_data("Ping (ms)", "#00FFFF")
+ping_data = get_series_data("Ping (ms)", "#007BFF")
 st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
 st.caption("Ping Time (ms) per Site (ICMP Check)")
-ping_options = create_line_chart_options("Ping (ms)", ping_data, "#00FFFF", site_names, y_name="Time (ms)")
+ping_options = create_line_chart_options("Ping (ms)", ping_data, "#007BFF", site_names, y_name="Time (ms)")
 st_echarts(options=sanitize_for_json(ping_options), height="300px")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- DNS Time ---
-dns_data = get_series_data("DNS Time (ms)", "#FF33CC")
+dns_data = get_series_data("DNS Time (ms)", "#17A2B8")
 st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
 st.caption("DNS Resolution Time (ms)")
-dns_options = create_line_chart_options("DNS Time (ms)", dns_data, "#FF33CC", site_names, y_name="Time (ms)")
+dns_options = create_line_chart_options("DNS Time (ms)", dns_data, "#17A2B8", site_names, y_name="Time (ms)")
 st_echarts(options=sanitize_for_json(dns_options), height="300px")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TCP Connect Time ---
-tcp_data = get_series_data("TCP Connect (ms)", "#B7FF33")
+tcp_data = get_series_data("TCP Connect (ms)", "#28A745")
 st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
 st.caption("TCP Connect Latency (ms)")
-tcp_options = create_line_chart_options("TCP Connect (ms)", tcp_data, "#B7FF33", site_names, y_name="Time (ms)")
+tcp_options = create_line_chart_options("TCP Connect (ms)", tcp_data, "#28A745", site_names, y_name="Time (ms)")
 st_echarts(options=sanitize_for_json(tcp_options), height="300px")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- TLS Handshake Time (NEW) ---
 if "TLS Handshake (ms)" in df_latest.columns:
-    tls_data = get_series_data("TLS Handshake (ms)", "#FF8C42")
+    tls_data = get_series_data("TLS Handshake (ms)", "#6C757D")
     st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
     st.caption("TLS Handshake Time (ms)")
-    tls_options = create_line_chart_options("TLS Handshake (ms)", tls_data, "#FF8C42", site_names, y_name="Time (ms)")
+    tls_options = create_line_chart_options("TLS Handshake (ms)", tls_data, "#6C757D", site_names, y_name="Time (ms)")
     st_echarts(options=sanitize_for_json(tls_options), height="300px")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- HTTP TTFB Time (NEW - Replaces general HTTP Time) ---
 if "HTTP TTFB (ms)" in df_latest.columns:
-    ttfb_data = get_series_data("HTTP TTFB (ms)", "#FFD700")
+    ttfb_data = get_series_data("HTTP TTFB (ms)", "#007BFF")
     st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
     st.caption(f"HTTP TTFB (Time To First Byte) (ms) (Threshold: {RESPONSE_TIME_THRESHOLD}ms)")
-    ttfb_options = create_line_chart_options("HTTP TTFB (ms)", ttfb_data, "#FFD700", site_names, y_name="Time (ms)", threshold=RESPONSE_TIME_THRESHOLD)
+    ttfb_options = create_line_chart_options("HTTP TTFB (ms)", ttfb_data, "#007BFF", site_names, y_name="Time (ms)", threshold=RESPONSE_TIME_THRESHOLD)
     st_echarts(options=sanitize_for_json(ttfb_options), height="300px")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- HTTP FirstChunk Time (NEW) ---
 if "HTTP FirstChunk (ms)" in df_latest.columns:
-    first_chunk_data = get_series_data("HTTP FirstChunk (ms)", "#42E6FF")
+    first_chunk_data = get_series_data("HTTP FirstChunk (ms)", "#17A2B8")
     st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
     st.caption("HTTP First Chunk Transfer Time (ms)")
-    first_chunk_options = create_line_chart_options("HTTP FirstChunk (ms)", first_chunk_data, "#42E6FF", site_names, y_name="Time (ms)")
+    first_chunk_options = create_line_chart_options("HTTP FirstChunk (ms)", first_chunk_data, "#17A2B8", site_names, y_name="Time (ms)")
     st_echarts(options=sanitize_for_json(first_chunk_options), height="300px")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- HTTP Total Time (NEW) ---
 if "HTTP Total (ms)" in df_latest.columns:
-    total_data = get_series_data("HTTP Total (ms)", "#FF33CC")
+    total_data = get_series_data("HTTP Total (ms)", "#28A745")
     st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
     st.caption("HTTP Total Transfer Time (ms)")
-    total_options = create_line_chart_options("HTTP Total (ms)", total_data, "#FF33CC", site_names, y_name="Time (ms)")
+    total_options = create_line_chart_options("HTTP Total (ms)", total_data, "#28A745", site_names, y_name="Time (ms)")
     st_echarts(options=sanitize_for_json(total_options), height="300px")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1251,10 +1249,10 @@ st.markdown("---")
 st.markdown("<h2 class='futuristic-sub'>CERTIFICATE EXPIRY STATUS</h2>", unsafe_allow_html=True)
 
 # --- SSL Expiry Chart ---
-ssl_data = get_series_data("SSL Days Left", "#ff4d6d")
+ssl_data = get_series_data("SSL Days Left", "#DC3545")
 st.caption(f"SSL Days Left per Site (Warning Threshold: {SSL_ALERT_DAYS} days)")
-ssl_options = create_line_chart_options("SSL Days Left", ssl_data, "#ff4d6d", site_names, y_name="Days Left", threshold=SSL_ALERT_DAYS)
+ssl_options = create_line_chart_options("SSL Days Left", ssl_data, "#DC3545", site_names, y_name="Days Left", threshold=SSL_ALERT_DAYS)
 st_echarts(options=sanitize_for_json(ssl_options), height="300px")
 
 st.markdown("---")
-st.caption("Status Colors: Neon Lime (🟢) = Up, Amber (🟡) = Slow/Warning, Neon Red (🔴) = Down/Error. Chart lines show individual site metrics clearly.")
+st.caption("Status Colors: Green (🟢) = Up, Amber (🟡) = Slow/Warning, Red (🔴) = Down/Error. Chart lines show individual site metrics clearly.")
