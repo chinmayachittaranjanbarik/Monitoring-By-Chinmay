@@ -7,9 +7,10 @@ Features:
 - Redirect counts and per-redirect TTFB times
 - Immediate CSV logging with header ensured and fsync to disk
 - Retries and external verification (DNS + HTTP) to reduce false positives
-- **PASSIVE KEYWORD CHECK: Records content status but does NOT affect site UP/DOWN status or alerting.**
+- PASSIVE KEYWORD CHECK: Records content status but does NOT affect site UP/DOWN status or alerting.
 - CLI modes: --run-now (one-shot), --diag <url> (diagnostic)
 - Configurable via .env and sites.yaml
+- **NEW: Scheduled Daily Email Status Report (9am, 1pm, 4:10pm, 5:30pm IST) - Fixed for single send.**
 """
 
 import os
@@ -25,6 +26,13 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse, urljoin, quote
 from contextlib import closing
 import warnings
+import re 
+
+# --- NEW IMPORTS FOR REPORTING ---
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+# --- END NEW IMPORTS ---
 
 from dateutil import parser as dateutil_parser
 from dateutil import tz as dateutil_tz
@@ -34,7 +42,7 @@ HAS_REQUESTS = False
 HAS_ICMPLIB = False
 HAS_DNS = False
 
-from filelock import FileLock
+from filelock import FileLock, Timeout # Import Timeout specifically
 from dotenv import dotenv_values
 
 # FIX: Cleaned and restructured import blocks to remove U+00A0 errors
@@ -101,6 +109,44 @@ ALERT_CONSECUTIVE_FAILURES = int(os.getenv("ALERT_CONSECUTIVE_FAILURES", "3"))
 ALERT_MINUTES_DOWN = int(os.getenv("ALERT_MINUTES_DOWN", "5"))
 SITE_STATE_FILE = os.getenv("SITE_STATE_FILE", "site_state.json")
 SITE_STATE_LOCK = SITE_STATE_FILE + ".lock"
+# --- NEW: Report State File for persistence ---
+REPORT_STATE_FILE = "daily_report_state.json" 
+REPORT_STATE_LOCK = REPORT_STATE_FILE + ".lock" # Lock for report state
+
+# --- UPDATED: Daily Report Schedule (IST) ---
+REPORT_TIMES_IST = [(9, 0), (13, 0), (16, 10), (17, 30)] # 9:00, 1:00 PM, 4:10 PM, 5:30 PM IST
+
+# ---------------------------
+# Load Report State (for persistence fix)
+# ---------------------------
+def load_report_state():
+    """Loads the daily report state from a file."""
+    default_state = {"date": None, "sent_slots": [False] * len(REPORT_TIMES_IST)}
+    if not os.path.exists(REPORT_STATE_FILE):
+        return default_state
+    try:
+        with FileLock(REPORT_STATE_LOCK, timeout=5): # ADDED LOCK
+            with open(REPORT_STATE_FILE, "r") as f:
+                state = json.load(f)
+                # Ensure the structure is correct, especially after code changes
+                if "sent_slots" in state and len(state["sent_slots"]) == len(REPORT_TIMES_IST):
+                     return state
+                else:
+                    return default_state
+    except Exception:
+        logging.warning("Failed to load or parse report state file. Resetting.")
+        return default_state
+
+def save_report_state(state):
+    """Saves the daily report state to a file."""
+    try:
+        with FileLock(REPORT_STATE_LOCK, timeout=5): # ADDED LOCK
+            with open(REPORT_STATE_FILE, "w") as f:
+                json.dump(state, f, default=str)
+    except Exception:
+        logging.error("Failed to save report state.")
+
+DAILY_REPORT_STATE = load_report_state()
 
 # ---------------------------
 # Load sites.yaml
@@ -160,15 +206,30 @@ CSV_FIELDNAMES = [
 
 def ensure_log_header():
     try:
+        # Check if the lock file exists and handle potential stale lock
+        if os.path.exists(LOCK_FILE):
+             try:
+                 # Try to acquire and release the lock to check if it's stale
+                 with FileLock(LOCK_FILE, timeout=0.1):
+                     pass
+             except Timeout:
+                 # If timeout occurs, the lock is currently held, do nothing.
+                 pass
+             except Exception:
+                 # If an error occurs, it might be a stale lock. Try deleting it.
+                 logging.warning(f"Removing potentially stale lock file: {LOCK_FILE}")
+                 try: os.remove(LOCK_FILE)
+                 except Exception: logging.error(f"Failed to remove lock file: {LOCK_FILE}")
+
         if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
             with FileLock(LOCK_FILE, timeout=10):
                 with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=CSV_FIELDNAMES)
                     writer.writeheader()
                     f.flush(); os.fsync(f.fileno())
-            logging.info("Created log file header.")
+            logging.info(f"Created log file header: {LOG_FILE}")
     except Exception:
-        logging.exception("Could not ensure log header")
+        logging.exception("Could not ensure log header. Check permissions.")
 
 def write_log_rows(rows):
     if not rows:
@@ -192,7 +253,7 @@ def write_log_rows(rows):
                     writer.writerow(out)
                 f.flush(); os.fsync(f.fileno())
     except Exception:
-        logging.exception("Failed to write logs")
+        logging.exception("Failed to write logs. Check permissions.")
 
 ensure_log_header()
 
@@ -219,7 +280,7 @@ def save_site_state(state):
             with open(SITE_STATE_FILE, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2, default=str)
     except Exception:
-        logging.exception("Failed to save site state")
+        logging.exception("Failed to save site state. Check permissions.")
 
 site_state = load_site_state()
 
@@ -694,63 +755,151 @@ def process_result_and_maybe_alert(final_result):
 # ---------------------------
 # Email helpers (simple, optional)
 # ---------------------------
-def send_email_alert(site_name, final_result, reason):
+
+def _send_email_generic(subject, body, is_html=False):
+    """Generic function to send an email, supporting HTML content."""
+    if not EMAIL_ENABLED or not EMAIL_TO or not EMAIL_USER or not EMAIL_PASS:
+        logging.warning("Email reports disabled or credentials/recipient not fully set in .env.")
+        return
+
     try:
-        import smtplib
-        from email.mime.text import MIMEText
-        subject = f"ALERT: {site_name} - DOWN"
-        body = f"Site: {site_name}\nURL: {final_result.get('URL')}\nStatus: {final_result.get('Status')}\nReason: {reason}\nTime (UTC): {datetime.now(timezone.utc).isoformat()}\nProbes Summary: {json.dumps(final_result.get('Probes Summary', {}), indent=2)}\nNotes: {final_result.get('Notes','')}\n"
-        msg = MIMEText(body)
+        # Create a multipart message and set headers
+        if is_html:
+            msg = MIMEMultipart("alternative")
+            msg.attach(MIMEText(body, 'html'))
+        else:
+            msg = MIMEText(body)
+        
         msg['Subject'] = subject
         msg['From'] = EMAIL_FROM
-        msg['To'] = ", ".join(EMAIL_TO)
+        msg['To'] = ", ".join(EMAIL_TO) # List to string
+
+        recipients = [r.strip() for r in EMAIL_TO if r.strip()]
+
+        logging.info("Connecting to SMTP server for email...")
         smtp_server = EMAIL_SMTP or "smtp.gmail.com"
+        
         if EMAIL_PORT == 465:
             with smtplib.SMTP_SSL(smtp_server, EMAIL_PORT, timeout=10) as s:
                 s.login(EMAIL_USER, EMAIL_PASS)
-                s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+                s.sendmail(EMAIL_FROM, recipients, msg.as_string())
         else:
             with smtplib.SMTP(smtp_server, EMAIL_PORT, timeout=10) as s:
                 s.ehlo()
-                try:
-                    s.starttls()
-                    s.ehlo()
-                except Exception:
-                    pass
+                try: s.starttls(); s.ehlo()
+                except Exception: pass
                 s.login(EMAIL_USER, EMAIL_PASS)
-                s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+                s.sendmail(EMAIL_FROM, recipients, msg.as_string())
+        
+        logging.info("Successfully sent email: %s", subject)
+
+    except Exception as e:
+        logging.error("Failed to send email: %s", e)
+        logging.error(traceback.format_exc())
+
+def send_email_alert(site_name, final_result, reason):
+    try:
+        subject = f"ALERT: {site_name} - DOWN"
+        body = f"Site: {site_name}\nURL: {final_result.get('URL')}\nStatus: {final_result.get('Status')}\nReason: {reason}\nTime (UTC): {datetime.now(timezone.utc).isoformat()}\nProbes Summary: {json.dumps(final_result.get('Probes Summary', {}), indent=2)}\nNotes: {final_result.get('Notes','')}\n"
+        _send_email_generic(subject, body, is_html=False)
         logging.info("Alert email sent for %s", site_name)
     except Exception:
         logging.exception("Failed to send alert email")
 
 def send_recovery_email(site_name, final_result):
     try:
-        import smtplib
-        from email.mime.text import MIMEText
         subject = f"RECOVERY: {site_name} - UP"
         body = f"Site: {site_name}\nURL: {final_result.get('URL')}\nStatus: {final_result.get('Status')}\nTime (UTC): {datetime.now(timezone.utc).isoformat()}\nProbes Summary: {json.dumps(final_result.get('Probes Summary', {}), indent=2)}\nNotes: {final_result.get('Notes','')}\n"
-        msg = MIMEText(body)
-        msg['Subject'] = subject
-        msg['From'] = EMAIL_FROM
-        msg['To'] = ", ".join(EMAIL_TO)
-        smtp_server = EMAIL_SMTP or "smtp.gmail.com"
-        if EMAIL_PORT == 465:
-            with smtplib.SMTP_SSL(smtp_server, EMAIL_PORT, timeout=10) as s:
-                s.login(EMAIL_USER, EMAIL_PASS)
-                s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-        else:
-            with smtplib.SMTP(smtp_server, EMAIL_PORT, timeout=10) as s:
-                s.ehlo()
-                try:
-                    s.starttls()
-                    s.ehlo()
-                except Exception:
-                    pass
-                s.login(EMAIL_USER, EMAIL_PASS)
-                s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+        _send_email_generic(subject, body, is_html=False)
         logging.info("Recovery email sent for %s", site_name)
     except Exception:
         logging.exception("Failed to send recovery email")
+
+# ---------------------------
+# NEW: Daily Report Logic
+# ---------------------------
+def generate_and_send_daily_report():
+    """Generates a summary of the current site status from site_state.json and sends it via email."""
+    try:
+        with FileLock(SITE_STATE_LOCK, timeout=5):
+            with open(SITE_STATE_FILE, 'r') as f:
+                state_data = json.load(f)
+    except Exception as e:
+        logging.error("Could not read site state file for report: %s. Report skipped.", e)
+        return
+
+    # Filter out any non-dictionary entries or sites without a name
+    valid_states = {name: state for name, state in state_data.items() if isinstance(state, dict)}
+
+    total_sites = len(valid_states)
+    up_count = sum(1 for site in valid_states.values() if site.get('last_status', '').startswith('Up') and 'Slow' not in site.get('last_status', ''))
+    slow_count = sum(1 for site in valid_states.values() if 'Slow' in site.get('last_status', ''))
+    down_count = sum(1 for site in valid_states.values() if site.get('last_status', '').startswith('Down'))
+    unknown_count = total_sites - (up_count + slow_count + down_count)
+    
+    # Get current time in IST
+    ist_tz = dateutil_tz.gettz('Asia/Kolkata')
+    report_time = datetime.now(ist_tz).strftime("%Y-%m-%d %I:%M %p IST")
+    
+    # HTML template for the email report
+    html_body = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #fcfcfc; }}
+            h2 {{ color: #004d99; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; }}
+            .summary-box {{ padding: 10px 15px; background-color: #f9f9f9; border-radius: 3px; margin-bottom: 20px; font-weight: bold; }}
+            .status-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+            .status-table th, .status-table td {{ border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }}
+            .status-table th {{ background-color: #004d99; color: #fff; }}
+            .status-up {{ background-color: #d4edda; color: #155724; }}
+            .status-slow {{ background-color: #fff3cd; color: #856404; }}
+            .status-down {{ background-color: #f8d7da; color: #721c24; }}
+            .status-unknown {{ background-color: #f8f9fa; color: #333; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>ORSAC Site Monitor - Scheduled Status Report</h2>
+            <p><strong>Report Time:</strong> {report_time}</p>
+            <div class="summary-box">
+                <p>Overall Status: 
+                <span style="color:#155724;">{up_count} UP</span> 
+                | <span style="color:#856404;">{slow_count} UP (Slow)</span> 
+                | <span style="color:#721c24;">{down_count} DOWN</span> 
+                | <span style="color:#333;">{unknown_count} UNKNOWN</span>
+                (Total: {total_sites} sites)</p>
+            </div>
+
+            <table class="status-table">
+                <tr><th>Website</th><th>Current Status</th></tr>
+    """
+
+    for name, state in valid_states.items():
+        status = state.get('last_status', 'Unknown')
+        
+        if 'Slow' in status:
+            status_class = 'status-slow'
+        elif status.startswith('Up'):
+            status_class = 'status-up'
+        elif status.startswith('Down'):
+            status_class = 'status-down'
+        else:
+            status_class = 'status-unknown'
+            
+        html_body += f'<tr><td>{name}</td><td class="{status_class}">{status}</td></tr>'
+
+    html_body += """
+            </table>
+            <p style="margin-top: 25px;"><small>This report shows the current status of all monitored sites as per the last check performed by the backend.</small></p>
+        </div>
+    </body>
+    </html>
+    """
+
+    subject = f"ORSAC Monitor Report: {up_count + slow_count} UP / {down_count} DOWN - {datetime.now(ist_tz).strftime('%d-%b %I:%M %p')}"
+    _send_email_generic(subject, html_body, is_html=True)
 
 # ---------------------------
 # Wrapper: retries + external verification
@@ -841,10 +990,12 @@ def diag_url(url):
     return phases
 
 # ---------------------------
-# main loop
+# main loop (FIXED)
 # ---------------------------
 def monitor_loop():
-    # Since the global lock is removed, this function just runs the loop immediately.
+    
+    global DAILY_REPORT_STATE
+    ist_tz = dateutil_tz.gettz('Asia/Kolkata')
     
     if FORCE_RUN_ON_START:
         try:
@@ -862,6 +1013,45 @@ def monitor_loop():
     logging.info("Entering interval monitor loop (interval %s seconds)", MONITOR_INTERVAL)
     while True:
         start = time.time()
+        
+        # --- CRITICAL FIX: Reload the state from disk at the beginning of the loop ---
+        # This ensures that if the script crashed and restarted quickly, 
+        # it reads the latest saved status from the disk before checking the schedule.
+        DAILY_REPORT_STATE = load_report_state() 
+        # --- END CRITICAL FIX ---
+        
+        # --- NEW: Daily Report Check (FIXED) ---
+        now_ist = datetime.now(ist_tz)
+        today_date = now_ist.date().isoformat()
+        
+        # 1. Reset the report state if the day has changed
+        if DAILY_REPORT_STATE["date"] != today_date:
+            DAILY_REPORT_STATE["date"] = today_date
+            DAILY_REPORT_STATE["sent_slots"] = [False] * len(REPORT_TIMES_IST)
+            save_report_state(DAILY_REPORT_STATE)
+            logging.info("New day detected. Daily report schedule reset.")
+
+        # 2. Check all slots
+        report_state_changed = False
+        for i, (report_hour, report_minute) in enumerate(REPORT_TIMES_IST):
+            # Create a datetime object for the specific report time today in IST
+            scheduled_time_ist = now_ist.replace(hour=report_hour, minute=report_minute, second=0, microsecond=0)
+            
+            # Check if current time is PAST the scheduled time AND the report hasn't been sent for this slot
+            if now_ist >= scheduled_time_ist and not DAILY_REPORT_STATE["sent_slots"][i]:
+                logging.info("Scheduled report time reached (%02d:%02d IST). Generating and sending report.", report_hour, report_minute)
+                generate_and_send_daily_report()
+                
+                # Mark the report as sent for this time slot
+                DAILY_REPORT_STATE["sent_slots"][i] = True
+                report_state_changed = True
+                
+        # 3. Save state only if a report was sent (or if the date was reset, handled above)
+        if report_state_changed:
+             save_report_state(DAILY_REPORT_STATE)
+
+        # --- End Daily Report Check ---
+
         try:
             run_checks_and_log()
         except Exception:
